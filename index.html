@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>NetguY Sorozatok</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#000;--card:#1c1c1e;--card2:#2c2c2e;--text:#fff;--mute:#8e8e93;--blue:#0a84ff;--green:#30d158;--orange:#ff9f0a;--red:#ff453a;--sep:#38383a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+body{min-height:100vh;padding:env(safe-area-inset-top) 0 calc(90px + env(safe-area-inset-bottom))}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px}
+h1{font-size:34px;margin:18px 0 4px;letter-spacing:-.5px}
+.sub{color:var(--mute);font-size:14px;margin-bottom:14px}
+input,select,textarea,button{font:inherit;color:inherit}
+.search{width:100%;background:var(--card);border:0;border-radius:12px;padding:11px 14px;font-size:16px;margin-bottom:12px}
+.seg{display:flex;background:var(--card);border-radius:10px;padding:2px;margin-bottom:14px}
+.seg button{flex:1;border:0;background:none;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:600;color:var(--mute)}
+.seg button.on{background:var(--card2);color:var(--text)}
+.list{background:var(--card);border-radius:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid var(--sep);cursor:pointer}
+.row:last-child{border-bottom:0}
+.dot{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:18px;background:var(--card2);flex:none}
+.mid{flex:1;min-width:0}
+.t{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m{color:var(--mute);font-size:13px;margin-top:2px}
+.star{color:var(--orange);font-weight:700;font-size:15px;flex:none}
+.empty{color:var(--mute);text-align:center;padding:40px 16px}
+.fab{position:fixed;right:20px;bottom:calc(24px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;border:0;background:var(--blue);color:#fff;font-size:30px;box-shadow:0 6px 20px rgba(10,132,255,.4)}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
+.sheet-bg.show{display:flex}
+.sheet{background:var(--card);width:100%;max-width:640px;border-radius:20px 20px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.sheet h2{margin:0 0 14px;font-size:20px}
+label{display:block;color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin:12px 0 5px}
+.f{width:100%;background:var(--card2);border:0;border-radius:10px;padding:11px 12px;font-size:16px}
+textarea.f{min-height:70px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{width:100%;border:0;border-radius:12px;padding:13px;font-weight:600;font-size:16px;background:var(--blue);color:#fff;margin-top:16px}
+.btn.ghost{background:var(--card2)}
+.btn.del{background:none;color:var(--red);margin-top:6px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:38px;height:38px;border-radius:10px;border:0;background:var(--card2);font-size:20px}
+.stepper span{min-width:34px;text-align:center;font-weight:600}
+.stars{display:flex;gap:2px;flex-wrap:wrap}
+.stars button{border:0;background:none;font-size:26px;color:var(--card2);padding:2px}
+.stars button.on{color:var(--orange)}
+.login{text-align:center;padding-top:22vh}
+.login p{color:var(--mute)}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--card2);padding:10px 16px;border-radius:20px;font-size:14px;display:none;z-index:20}
+.top{display:flex;justify-content:space-between;align-items:flex-start}
+.out{background:none;border:0;color:var(--blue);font-size:15px;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="sheet-bg" id="bg"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// === Beállítás ===
+const SUPABASE_URL = "https://rfjegxblgadmnrosxreb.supabase.co";
+const SUPABASE_KEY = "sb_publishable_hLRz7AvzmJFyvqHMqOTDoA_MTWBRwzT";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const STATUS = {watchlist:"Megnézendő", watching:"Nézem", watched:"Láttam"};
+const ICON = {series:"📺", movie:"🎬"};
+let items = [], tab = "watching", q = "", session = null;
+
+const $ = (s) => document.querySelector(s);
+function h(tag, attrs, ...kids){
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})){
+    if (k==="class") e.className=v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v!==false && v!=null) e.setAttribute(k, v===true?"":v);
+  }
+  for (const k of kids.flat()) if (k!=null && k!==false) e.append(k.nodeType?k:document.createTextNode(k));
+  return e;
+}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",2200)}
+
+// === Auth ===
+async function login(){
+  const { error } = await sb.auth.signInWithOAuth({
+    provider:"google",
+    options:{ redirectTo: location.origin + location.pathname }
+  });
+  if (error) toast("Bejelentkezési hiba: "+error.message);
+}
+async function logout(){ await sb.auth.signOut(); }
+
+// === Adat ===
+async function load(){
+  const { data, error } = await sb.from("watch_items").select("*").order("updated_at",{ascending:false});
+  if (error){ toast("Betöltési hiba: "+error.message); return; }
+  items = data; render();
+}
+async function save(id, patch){
+  const res = id
+    ? await sb.from("watch_items").update(patch).eq("id", id).select().single()
+    : await sb.from("watch_items").insert(patch).select().single();
+  if (res.error){ toast("Mentési hiba: "+res.error.message); return null; }
+  const i = items.findIndex(x=>x.id===res.data.id);
+  if (i>=0) items[i]=res.data; else items.unshift(res.data);
+  items.sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
+  render(); return res.data;
+}
+async function remove(id){
+  const { error } = await sb.from("watch_items").delete().eq("id", id);
+  if (error){ toast("Törlési hiba: "+error.message); return; }
+  items = items.filter(x=>x.id!==id); render();
+}
+
+// === Nézetek ===
+function render(){
+  const app = $("#app"); app.replaceChildren();
+  if (!session){
+    app.append(h("div",{class:"login"},
+      h("h1",{},"📺 NetguY Sorozatok"),
+      h("p",{},"Sorozatok és filmek követése, értékeléssel."),
+      h("button",{class:"btn",onclick:login},"Belépés Google-lel")));
+    return;
+  }
+  const counts = {}; for (const k in STATUS) counts[k]=items.filter(x=>x.status===k).length;
+  app.append(
+    h("div",{class:"top"},
+      h("div",{}, h("h1",{},"Sorozatok"), h("div",{class:"sub"}, items.length+" tétel összesen")),
+      h("button",{class:"out",onclick:logout},"Kilépés")),
+    h("input",{class:"search",placeholder:"Keresés…",value:q,oninput:e=>{q=e.target.value;renderList()}}),
+    h("div",{class:"seg"}, Object.entries(STATUS).map(([k,v])=>
+      h("button",{class:tab===k?"on":"",onclick:()=>{tab=k;render()}}, v+" ("+counts[k]+")"))),
+    h("div",{id:"list"}),
+    h("button",{class:"fab",onclick:()=>openSheet(null),"aria-label":"Új"},"+")
+  );
+  renderList();
+}
+function renderList(){
+  const box = $("#list"); if(!box) return; box.replaceChildren();
+  const s = q.trim().toLowerCase();
+  const rows = items.filter(x=>x.status===tab && (!s || x.title.toLowerCase().includes(s)));
+  if (!rows.length){ box.append(h("div",{class:"empty"}, s?"Nincs találat.":"Itt még nincs semmi. Az alsó + gombbal adhatsz hozzá.")); return; }
+  box.append(h("div",{class:"list"}, rows.map(x=>{
+    const meta = [x.kind==="series"?"Sorozat":"Film", x.year, x.platform,
+      x.kind==="series" && x.season!=null ? `S${x.season}${x.episode!=null?" · E"+x.episode:""}` : null].filter(Boolean).join(" · ");
+    return h("div",{class:"row",onclick:()=>openSheet(x)},
+      h("div",{class:"dot"},ICON[x.kind]),
+      h("div",{class:"mid"}, h("div",{class:"t"},x.title), h("div",{class:"m"},meta)),
+      x.rating ? h("div",{class:"star"},"★ "+x.rating) : null);
+  })));
+}
+
+function openSheet(x){
+  const d = x ? {...x} : {title:"",kind:"series",status:tab,rating:null,season:null,episode:null,year:null,platform:"",notes:""};
+  const sh = $("#sheet"); sh.replaceChildren();
+  const close = ()=>$("#bg").classList.remove("show");
+  const sel = (key, opts) => { const s=h("select",{class:"f",onchange:e=>{d[key]=e.target.value;if(key==="kind")redraw()}},
+      Object.entries(opts).map(([k,v])=>h("option",{value:k,selected:d[key]===k},v))); return s; };
+  const num = (key,min) => h("input",{class:"f",type:"number",inputmode:"numeric",min,value:d[key]??"",
+      oninput:e=>{d[key]=e.target.value===""?null:parseInt(e.target.value,10)}});
+  const step = (key) => h("div",{class:"stepper"},
+      h("button",{type:"button",onclick:()=>{d[key]=Math.max(key==="season"?0:0,(d[key]||0)-1);redraw()}},"−"),
+      h("span",{},d[key]??"–"),
+      h("button",{type:"button",onclick:()=>{d[key]=(d[key]||0)+1;redraw()}},"+"));
+
+  function redraw(){
+    sh.replaceChildren(
+      h("h2",{}, x?"Szerkesztés":"Új tétel"),
+      h("label",{},"Cím"),
+      h("input",{class:"f",id:"title",value:d.title,maxlength:150,placeholder:"pl. Breaking Bad",oninput:e=>d.title=e.target.value}),
+      h("div",{class:"two"},
+        h("div",{}, h("label",{},"Típus"), sel("kind",{series:"Sorozat",movie:"Film"})),
+        h("div",{}, h("label",{},"Állapot"), sel("status",STATUS))),
+      d.kind==="series" ? h("div",{class:"two"},
+        h("div",{}, h("label",{},"Évad"), step("season")),
+        h("div",{}, h("label",{},"Epizód"), step("episode"))) : null,
+      h("div",{class:"two"},
+        h("div",{}, h("label",{},"Év"), num("year",1900)),
+        h("div",{}, h("label",{},"Platform"), h("input",{class:"f",value:d.platform||"",maxlength:60,placeholder:"Netflix, HBO…",oninput:e=>d.platform=e.target.value}))),
+      h("label",{},"Értékelés"),
+      h("div",{class:"stars"}, Array.from({length:10},(_,i)=>
+        h("button",{type:"button",class:(d.rating||0)>i?"on":"",onclick:()=>{d.rating=d.rating===i+1?null:i+1;redraw()}},"★"))),
+      h("label",{},"Jegyzet"),
+      h("textarea",{class:"f",maxlength:1000,oninput:e=>d.notes=e.target.value},d.notes||""),
+      h("button",{class:"btn",onclick:async()=>{
+        if(!d.title.trim()){toast("A cím kötelező");return;}
+        const patch = {title:d.title.trim(),kind:d.kind,status:d.status,rating:d.rating,
+          season:d.kind==="series"?d.season:null,episode:d.kind==="series"?d.episode:null,
+          year:d.year,platform:(d.platform||"").trim()||null,notes:(d.notes||"").trim()||null};
+        const r = await save(x?x.id:null, patch); if(r){ if(!x) tab=r.status; close(); render(); }
+      }},"Mentés"),
+      h("button",{class:"btn ghost",onclick:close},"Mégse"),
+      x ? h("button",{class:"btn del",onclick:async()=>{ if(confirm("Biztosan törlöd?")){await remove(x.id);close();} }},"Törlés") : null
+    );
+  }
+  redraw();
+  $("#bg").classList.add("show");
+  if(!x) setTimeout(()=>$("#title")&&$("#title").focus(),50);
+}
+$("#bg").addEventListener("click",e=>{ if(e.target.id==="bg") e.target.classList.remove("show"); });
+
+// === Indítás ===
+sb.auth.onAuthStateChange((_ev, s)=>{
+  session = s;
+  if (s) load(); else { items=[]; render(); }
+});
+sb.auth.getSession().then(({data})=>{ session=data.session; if(session) load(); else render(); });
+</script>
+</body>
+</html>
